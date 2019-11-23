@@ -9,7 +9,7 @@ from skimage.morphology import disk
 from skimage.filters.rank import median
 import math
 
-dir_path = os.path.abspath("../Dataset/Images/_BG/")
+dir_path = os.path.abspath("../dataset/Images/_BG/")
 
 bg = [] 
 for the_file in os.listdir(dir_path):
@@ -24,7 +24,7 @@ for i in range(len(bg)):
 
 bg_frame = result/len(bg)
 # fig = plt.figure(figsize=(40, 30))
-dir_path = "../Dataset/Images/5/"
+dir_path = "../dataset/Images/5/"
 
 batch_size = 20
 
