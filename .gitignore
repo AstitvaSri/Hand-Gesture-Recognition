@@ -1,0 +1,7 @@
+Dataset
+venv
+.vscode*
+PROJECT*
+Source\ Code/DIP*
+__pycache__/
+*.pyc
