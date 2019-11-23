@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
-from math import atan2
+from math import atan,atan2,pi
 import sys
 #adding root project to system path
 root_project = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -47,7 +47,7 @@ def detect_palm_circle(input_img, debug=False, visual_debug=False):
         if inner_circle_status:
             break
         inner_circle_radius+=1
-    outer_circle_radius = int(1.5 * inner_circle_radius)
+    outer_circle_radius = int(1.3* inner_circle_radius)
     if debug:
         print("[DEBUG] detect_palm_circle : inner circle radius - %d and outer circle radius - %d" % (inner_circle_radius, outer_circle_radius))
     end_time = (datetime.utcnow() - start_time).total_seconds()
@@ -132,8 +132,18 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
     palm_mask[convex_hull==False] = 0
     wrist_point_one, wrist_point_two = wrist_detection(boundary_points)
     palm_mask = scipy.bitwise_and(input_image, palm_mask)
+    display_image = np.stack([input_image, input_image, input_image], axis=2)
+    #remove the pixel below the wristine
+    remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two)
+    #image rotation 
+    #slope of wristline and angle of rotation
+    m = (wrist_point_two[0]-wrist_point_one[0])/(wrist_point_two[1]-wrist_point_one[1])
+    theta = atan(m)*180/pi
+    rotation_center = ((wrist_point_one[0]+wrist_point_two[0])/2, (wrist_point_one[1]+wrist_point_two[1])/2)
+    #executing rotation with above parameters
+    rotated_image, rotation_marix = img_rotation(input_image, theta, rotation_center, debug=debug)
+    palm_mask, _ = img_rotation(palm_mask, theta, rotation_center, debug=debug)
     if visual_debug:
-        display_image = np.stack([input_image, input_image, input_image], axis=2)
         # displaying the palm centre
         rr, cc = circle_perimeter(centre_xy[0], centre_xy[1], 3)
         rr, cc = valid_circle_points(rr, cc, display_image.shape[0], display_image.shape[1])
@@ -149,17 +159,67 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
         # displaying the wirst line
         rr, cc = line(wrist_point_one[0], wrist_point_one[1], wrist_point_two[0], wrist_point_two[1])
         display_image[rr, cc] = [255, 0, 0]
+        # imgnew = cv2.rotate(img,theta)
         fig = plt.figure()
-        ax0 = fig.add_subplot(1, 2, 1)
+        ax0 = fig.add_subplot(2, 2, 1)
         ax0.set_title("original input image")
         ax0.imshow(display_image)
-        ax1 = fig.add_subplot(1, 2, 2)
-        ax1.set_title("palm mask with wrist line")
-        ax1.imshow(palm_mask, cmap='gray')
+        ax1 = fig.add_subplot(2, 2, 2)
+        ax1.set_title("rotated image wrt wrist line")
+        ax1.imshow(rotated_image, cmap='gray')
+        ax2 = fig.add_subplot(2, 2, 3)
+        ax2.set_title("palm mask with wrist line")
+        ax2.imshow(palm_mask, cmap='gray')
+        ax3 = fig.add_subplot(2, 2, 4)
+        ax3.set_title("segmentation")
+        ax3.imshow((rotated_image - palm_mask), cmap='gray')
+        # wristline_len = np.sqrt(np.square(wrist_point_one[0] - wrist_point_two[0]) + np.square(wrist_point_one[1] - wrist_point_two[1]))
+        # ax3.imshow(img_rotation(input_image, theta, (wrist_point_one[0]-wristline_len, wrist_point_one[0]-wristline_len), debug=debug), cmap='gray')
         plt.show()
-    return palm_mask
+    return palm_mask, rotated_image
 
-img = img_as_ubyte(io.imread(os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/5/89.jpg')))
-palm_mask = extract_palm_mask(img, debug=True, visual_debug=True, vd_last_step=False)
-plt.imshow((img - palm_mask), cmap='gray')
-plt.show()
+def remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two):
+    #removing portion beneath wrist line
+    slope = (wrist_point_one[0] - wrist_point_two[0])/(wrist_point_one[1] - wrist_point_two[1])
+    intercept = wrist_point_one[0] - wrist_point_one[1]*slope 
+    range_y,range_x = input_image.shape
+    for x in range(range_x):
+        for y in range(range_y):
+            thresh = y-(slope*x)
+            if thresh > intercept:
+                input_image[y][x] = 0
+
+def img_rotation(input_image, theta, centre_points, debug=False):
+    # JAZIB
+    num_rows, num_cols = input_image.shape[:2]
+    if debug:
+        if(theta < 0):
+            print("[DEBUG] img_rotation - negative angle detected : %f" % theta)
+        # rotation_point = tuple(wrist_point_one)
+        else:
+            print("[DEBUG] img_rotation - positive angle detected : %f" % theta)
+        # rotation_point = tuple(wrist_point_two)
+    rotation_matrix = cv2.getRotationMatrix2D(tuple(centre_points), theta, 1)
+    rotated_img = cv2.warpAffine(input_image, rotation_matrix, (num_cols, num_rows))
+    return rotated_img, rotation_matrix
+
+
+threshold = 5
+root_dir = os.path.abspath('X:/DIP/Hand-Gesture-Recognition-master/dataset/new_binary_images/')
+for dir_name in os.listdir(root_dir):
+    if dir_name == '_BG':
+        continue
+    print("working on the dataset %s" % (dir_name))
+    file_names = os.listdir(os.path.join(root_dir, dir_name))
+    np.random.shuffle(file_names)
+    for img_file_name in file_names[:threshold]:
+        img_file_path = os.path.join(root_dir, dir_name, img_file_name)
+        img = img_as_ubyte(io.imread(os.path.abspath(img_file_path)))
+        extract_palm_mask(img, debug=False, visual_debug=True)      
+# img = img_as_ubyte(io.imread(os.path.abspath('X:/DIP/Hand-Gesture-Recognition-master/dataset/new_binary_images/5/50.jpg')))
+# palm_mask = extract_palm_mask(img, debug=True, visual_debug=True)
+# plt.imshow((img - palm_mask), cmap='gray')
+# plt.show()
+
+
+
