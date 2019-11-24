@@ -20,6 +20,11 @@ from skimage.morphology import convex_hull_image
 from skimage.draw import circle_perimeter, line
 
 
+def remove_noise_around_hand(input_image, palm_point):
+    nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(input_image, connectivity=8)
+    input_image[output != output[palm_point[0], palm_point[1]]] = 0
+    return stats[output[palm_point[0], palm_point[1]], -1]
+
 def detect_palm_circle(input_img, debug=False, visual_debug=False):
     start_time = datetime.utcnow()
     #dilation for carrying out correction
@@ -71,8 +76,7 @@ def detect_palm_circle(input_img, debug=False, visual_debug=False):
         ax2.set_title("palm circle with centre : [%d, %d]" % (palm_x, palm_y))
         ax2.imshow(display_image, cmap='gray')
         plt.show()
-    return [palm_x, palm_y], inner_circle_radius, outer_circle_radius
-        
+    return [palm_x, palm_y], inner_circle_radius, outer_circle_radius 
 
 def get_boundary_points(sample_points, input_image, debug=False):
     boundary_points = []
@@ -114,9 +118,11 @@ def valid_circle_points(rr, cc, x_max, y_max):
     return result_x, result_y
 
 def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=False, vd_last_step=True):
+    #making image binary
     input_image[input_image>127] = 255
-    input_image[input_image<=127] = 0 
+    input_image[input_image<=127] = 0
     centre_xy, inner_circle_radius, outer_circle_radius = detect_palm_circle(input_image, visual_debug=visual_debug and not vd_last_step, debug=debug)
+    cluster_size = remove_noise_around_hand(input_image, centre_xy)
     outer_circle_points = bresenhamCircle(centre_xy[0], centre_xy[1], outer_circle_radius)
     #sorting points in clockwise direction
     outer_circle_points = sorted(outer_circle_points, key = lambda c:atan2(c[0] - centre_xy[0], c[1] - centre_xy[1]))
@@ -138,24 +144,24 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
     palm_mask = scipy.bitwise_and(input_image, palm_mask)
 
     display_image = np.stack([input_image, input_image, input_image], axis=2)
-    #remove the pixel below the wristine
+    #r emove the pixel below the wristine
     remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two)
-    #image rotation 
-    #slope of wristline and angle of rotation
+    # image rotation 
+    # slope of wristline and angle of rotation
     m = (wrist_point_two[0]-wrist_point_one[0])/(wrist_point_two[1]-wrist_point_one[1])
     theta = atan(m)*180/pi
-    rotation_center = ((wrist_point_one[0]+wrist_point_two[0])/2, (wrist_point_one[1]+wrist_point_two[1])/2)
-    #executing rotation with above parameters
-    rotated_image, rotation_matrix = img_rotation(input_image, theta, rotation_center, debug=debug)
+    rotation_center = ((wrist_point_one[0] + wrist_point_two[0])/2, (wrist_point_one[1] + wrist_point_two[1])/2)
+    # executing rotation with above parameters
+    rotated_image, rotation_marix = img_rotation(input_image, theta, rotation_center, debug=debug)
     palm_mask, _ = img_rotation(palm_mask, theta, rotation_center, debug=debug)
-    palm_removed = rotated_image - palm_mask
-
-    #remove this code - JAZIB
-    #remove this code - JAZIB-upto this point
-
-    #ASTITVA
-    fingers_labelled_image = get_fingers_labelled_image(rotated_image,palm_removed,centre_xy,[wrist_point_one,wrist_point_two])
-
+    # calculating rotated palm points and wrist lines
+    rotated_palm_points = rotation_marix.dot([centre_xy[1], centre_xy[0], 1])
+    rotated_wrist_point_one = rotation_marix.dot([wrist_point_one[1], wrist_point_one[0], 1])
+    rotated_wrist_point_two = rotation_marix.dot([wrist_point_two[1], wrist_point_two[0], 1])
+    # converting to rr and cc 
+    rotated_palm_points[0], rotated_palm_points[1] = rotated_palm_points[1], rotated_palm_points[0]
+    rotated_wrist_point_one[0], rotated_wrist_point_one[1] = rotated_wrist_point_one[1], rotated_wrist_point_one[0]
+    rotated_wrist_point_two[0], rotated_wrist_point_two[1] = rotated_wrist_point_two[1], rotated_wrist_point_two[0]
     if visual_debug:
         # displaying the palm centre
         rr, cc = circle_perimeter(centre_xy[0], centre_xy[1], 3)
@@ -185,11 +191,9 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
         ax2.imshow(palm_mask, cmap='gray')
         ax3 = fig.add_subplot(2, 2, 4)
         ax3.set_title("segmentation")
-        ax3.imshow(fingers_labelled_image, cmap='gray')
-        # wristline_len = np.sqrt(np.square(wrist_point_one[0] - wrist_point_two[0]) + np.square(wrist_point_one[1] - wrist_point_two[1]))
-        # ax3.imshow(img_rotation(input_image, theta, (wrist_point_one[0]-wristline_len, wrist_point_one[0]-wristline_len), debug=debug), cmap='gray')
+        ax3.imshow((rotated_image - palm_mask), cmap='gray')
         plt.show()
-    return palm_mask, rotated_image
+    return palm_mask, rotated_image, rotated_palm_points, rotated_wrist_point_one, rotated_wrist_point_two, cluster_size
 
 def remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two):
     #removing portion beneath wrist line
@@ -203,33 +207,31 @@ def remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two)
                 input_image[y][x] = 0
 
 def img_rotation(input_image, theta, centre_points, debug=False):
-    # JAZIB
     num_rows, num_cols = input_image.shape[:2]
     if debug:
         if(theta < 0):
             print("[DEBUG] img_rotation - negative angle detected : %f" % theta)
-        # rotation_point = tuple(wrist_point_one)
         else:
             print("[DEBUG] img_rotation - positive angle detected : %f" % theta)
-        # rotation_point = tuple(wrist_point_two)
     rotation_matrix = cv2.getRotationMatrix2D(tuple(centre_points), theta, 1)
     rotated_img = cv2.warpAffine(input_image, rotation_matrix, (num_cols, num_rows), flags=cv2.INTER_NEAREST)
     return rotated_img, rotation_matrix
 
 
-# threshold = 1
-# root_dir = os.path.abspath('/home/sarcastitva/Hand-Gesture-Recognition-master/dataset/new_binary_images')
+# threshold = 5
+# root_dir = os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/')
 # for dir_name in os.listdir(root_dir):
-#     if dir_name != '5':
+#     if dir_name == '_BG':
 #         continue
-
 #     print("working on the dataset %s" % (dir_name))
 #     file_names = os.listdir(os.path.join(root_dir, dir_name))
 #     np.random.shuffle(file_names)
 #     for img_file_name in file_names[:threshold]:
 #         img_file_path = os.path.join(root_dir, dir_name, img_file_name)
 #         img = img_as_ubyte(io.imread(os.path.abspath(img_file_path)))
-#         extract_palm_mask(img, debug=False, visual_debug=True)  
+#         extract_palm_mask(img, debug=False, visual_debug=True)      
+# img = img_as_ubyte(io.imread(os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/5/50.jpg')))
+# extract_palm_mask(img, debug=True, visual_debug=True)
 
 img = img_as_ubyte(io.imread(os.path.abspath('/home/sarcastitva/Hand-Gesture-Recognition-master/dataset/new_binary_images/5/5.jpg')))
 extract_palm_mask(img, debug=True, visual_debug=True)
