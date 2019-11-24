@@ -155,6 +155,10 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
     rotated_palm_points = rotation_marix.dot([centre_xy[1], centre_xy[0], 1])
     rotated_wrist_point_one = rotation_marix.dot([wrist_point_one[1], wrist_point_one[0], 1])
     rotated_wrist_point_two = rotation_marix.dot([wrist_point_two[1], wrist_point_two[0], 1])
+    # converting to rr and cc 
+    rotated_palm_points[0], rotated_palm_points[1] = rotated_palm_points[1], rotated_palm_points[0]
+    rotated_wrist_point_one[0], rotated_wrist_point_one[1] = rotated_wrist_point_one[1], rotated_wrist_point_one[0]
+    rotated_wrist_point_two[0], rotated_wrist_point_two[1] = rotated_wrist_point_two[1], rotated_wrist_point_two[0]
     if visual_debug:
         # displaying the palm centre
         rr, cc = circle_perimeter(centre_xy[0], centre_xy[1], 3)
@@ -223,7 +227,7 @@ def img_rotation(input_image, theta, centre_points, debug=False):
 #         img_file_path = os.path.join(root_dir, dir_name, img_file_name)
 #         img = img_as_ubyte(io.imread(os.path.abspath(img_file_path)))
 #         extract_palm_mask(img, debug=False, visual_debug=True)      
-img = img_as_ubyte(io.imread(os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/5/50.jpg')))
-palm_mask = extract_palm_mask(img, debug=True, visual_debug=True)
+# img = img_as_ubyte(io.imread(os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/5/50.jpg')))
+# extract_palm_mask(img, debug=True, visual_debug=True)
 
 
