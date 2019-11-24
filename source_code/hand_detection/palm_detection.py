@@ -7,11 +7,14 @@ import os
 from datetime import datetime
 from math import atan,atan2,pi
 import sys
+
 #adding root project to system path
 root_project = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(root_project)
 from source_code.utilities.circle_creation import bresenhamCircle
 from source_code.utilities.graph_utils import bfs
+from source_code.hand_detection.finger_segmentation import get_fingers_labelled_image
+
 import scipy
 from skimage.morphology import convex_hull_image
 from skimage.draw import circle_perimeter, line
@@ -63,7 +66,6 @@ def detect_palm_circle(input_img, debug=False, visual_debug=False):
         display_image = np.copy(input_img)
         fig = plt.figure()
         ax0 = fig.add_subplot(2, 2, 1)
-        ax0.set_title("original input image")
         ax0.imshow(input_img, cmap='gray')
         ax1 = fig.add_subplot(2, 2, 2)
         ax1.set_title("distance transform")
@@ -140,6 +142,7 @@ def extract_palm_mask(input_image, sample_spacing=20, debug=False, visual_debug=
     palm_mask[convex_hull==False] = 0
     wrist_point_one, wrist_point_two = wrist_detection(boundary_points)
     palm_mask = scipy.bitwise_and(input_image, palm_mask)
+
     display_image = np.stack([input_image, input_image, input_image], axis=2)
     #r emove the pixel below the wristine
     remove_pixel_below_wrist_line(input_image, wrist_point_one, wrist_point_two)
@@ -230,4 +233,5 @@ def img_rotation(input_image, theta, centre_points, debug=False):
 # img = img_as_ubyte(io.imread(os.path.abspath('C:/Users/tusha/Desktop/MS/dip/Hand-Gesture-Recognition/dataset/new_binary_images/5/50.jpg')))
 # extract_palm_mask(img, debug=True, visual_debug=True)
 
-
+img = img_as_ubyte(io.imread(os.path.abspath('/home/sarcastitva/Hand-Gesture-Recognition-master/dataset/new_binary_images/5/5.jpg')))
+extract_palm_mask(img, debug=True, visual_debug=True)
